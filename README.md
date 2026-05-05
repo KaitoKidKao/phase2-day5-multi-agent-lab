@@ -58,43 +58,52 @@ Trace + Benchmark Report
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -e "[dev]"
-cp .env.example .env
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
 ```
 
-### 2. Cấu hình API keys
-
-Mở `.env` và điền key cần thiết.
-
+### Bước 2: Cài đặt thư viện
 ```bash
-OPENAI_API_KEY=...
-# optional
-LANGSMITH_API_KEY=...
-TAVILY_API_KEY=...
+pip install -e ".[llm,dev]"
+pip install langfuse  # Cần thiết cho tính năng tracing nâng cao
 ```
 
-### 3. Chạy smoke test
+### Bước 3: Cấu hình biến môi trường (.env)
+Tạo file `.env` từ file mẫu và điền các thông tin sau:
 
-```bash
-make test
-python -m multi_agent_research_lab.cli --help
+```env
+# --- LLM Config ---
+OPENAI_API_KEY="sk-..."
+OPENAI_MODEL="gpt-4o-mini"
+
+# --- Tracing (Tùy chọn nhưng khuyến khích) ---
+# LangSmith
+LANGSMITH_API_KEY="lsv2_pt_..."
+LANGSMITH_PROJECT="Day20-MultiAgent"
+
+# Langfuse
+LANGFUSE_SECRET_KEY="sk-lf-..."
+LANGFUSE_PUBLIC_KEY="pk-lf-..."
+LANGFUSE_BASE_URL="https://cloud.langfuse.com"
+
+# --- Search API ---
+TAVILY_API_KEY="tvly-..."
+
+# --- Runtime Settings ---
+LOG_LEVEL="INFO"
+MAX_ITERATIONS=6
 ```
 
-### 4. Chạy baseline skeleton
+## 3. Hướng dẫn sử dụng (Usage)
 
+Dự án cung cấp 2 chế độ chạy chính qua CLI để so sánh hiệu quả:
+
+### Chạy Single-Agent Baseline
+Chế độ này chỉ sử dụng 1 LLM duy nhất để trả lời câu hỏi (để benchmark).
 ```bash
-python -m multi_agent_research_lab.cli baseline \
-  --query "Research GraphRAG state-of-the-art and write a 500-word summary"
-```
-
-Lệnh này chỉ chạy khung baseline tối giản. Học viên cần tự triển khai logic LLM thực tế trong `src/multi_agent_research_lab/services/llm_client.py`.
-
-### 5. Chạy multi-agent skeleton
-
-```bash
-python -m multi_agent_research_lab.cli multi-agent \
-  --query "Research GraphRAG state-of-the-art and write a 500-word summary"
+python -m multi_agent_research_lab.cli baseline --query "Research GraphRAG state-of-the-art"
 ```
 
 Mặc định lệnh sẽ báo các `TODO` cần làm. Đây là chủ đích của starter repo.

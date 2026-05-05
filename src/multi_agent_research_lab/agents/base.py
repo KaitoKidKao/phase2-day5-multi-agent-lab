@@ -1,18 +1,16 @@
-"""Base agent contract.
-
-The concrete agent classes intentionally contain TODOs. The goal is to force students
-to make design decisions instead of receiving a finished implementation.
-"""
-
 from abc import ABC, abstractmethod
 
 from multi_agent_research_lab.core.state import ResearchState
+from multi_agent_research_lab.services.llm_client import LLMClient
 
 
 class BaseAgent(ABC):
     """Minimal interface every agent must implement."""
 
     name: str
+
+    def __init__(self, llm: LLMClient) -> None:
+        self.llm = llm
 
     @abstractmethod
     def run(self, state: ResearchState) -> ResearchState:
