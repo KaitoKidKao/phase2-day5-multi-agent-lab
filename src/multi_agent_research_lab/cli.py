@@ -48,6 +48,10 @@ def baseline(
     console.print(f"[bold yellow]Running Single-Agent Baseline for:[/bold yellow] {query}")
     
     llm = LLMClient()
+    if not llm.validate_query(query):
+        console.print("[bold red]Error:[/bold red] Query violated safety or length limits.")
+        raise typer.Exit(code=1)
+
     response = llm.complete(
         "You are a helpful research assistant. Answer the user query directly in a structured format.",
         query
@@ -72,6 +76,10 @@ def multi_agent(
     # Initialize services
     llm = LLMClient()
     search = SearchClient()
+
+    if not llm.validate_query(query):
+        console.print("[bold red]Error:[/bold red] Query violated safety or length limits.")
+        raise typer.Exit(code=1)
     
     workflow = MultiAgentWorkflow(llm, search)
     
