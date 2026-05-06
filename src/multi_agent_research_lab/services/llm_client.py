@@ -1,9 +1,19 @@
 from dataclasses import dataclass
 from typing import Any
 import logging
+import os
 
-from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential, RetryError
+# Import langfuse.openai FIRST to enable global patching of the openai library
+try:
+    import langfuse.openai as openai_patched
+    # This ensures that any call to openai.OpenAI() is automatically traced
+    from langfuse.openai import OpenAI
+    logger = logging.getLogger(__name__)
+    logger.info("Langfuse global patching enabled for OpenAI.")
+except ImportError:
+    from openai import OpenAI
+
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from multi_agent_research_lab.core.config import get_settings
 
@@ -23,12 +33,9 @@ class LLMClient:
     def __init__(self) -> None:
         settings = get_settings()
         
-        # Try to use Langfuse integration for automatic tracing
-        try:
-            from langfuse.openai import OpenAI as LangfuseOpenAI
-            self.client = LangfuseOpenAI(api_key=settings.openai_api_key)
-        except ImportError:
-            self.client = OpenAI(api_key=settings.openai_api_key)
+        # Initialize the client. Since it's patched by langfuse.openai, 
+        # it will automatically send traces to Langfuse if env vars are set.
+        self.client = OpenAI(api_key=settings.openai_api_key)
             
         self.model = settings.openai_model
         self.fallback_model = settings.openai_fallback_model
@@ -51,17 +58,15 @@ class LLMClient:
 
         # 3. OpenAI Moderation API (Negative content, Hate, Violence, etc.)
         try:
+            # This call is now automatically traced by Langfuse because of the patching
             moderation = self.client.moderations.create(input=query)
             result = moderation.results[0]
             
             if result.flagged:
                 logger.warning(f"Content Moderation Flagged: {result.categories}")
-                # You can log specific categories if needed:
-                # categories = [cat for cat, flagged in result.categories.items() if flagged]
                 return False
         except Exception as e:
             logger.error(f"Moderation API call failed: {e}. Proceeding with caution.")
-            # If moderation fails, we still allow basic technical checks to pass
             pass
             
         return True
@@ -72,6 +77,7 @@ class LLMClient:
     )
     def _call_api(self, model: str, system_prompt: str, user_prompt: str) -> LLMResponse:
         """Internal method to call the API with retry logic."""
+        # This call is now automatically traced and nested within the LangGraph trace
         response = self.client.chat.completions.create(
             model=model,
             messages=[
@@ -79,12 +85,14 @@ class LLMClient:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
+            # We can pass name to make it look nice in Langfuse
+            name=f"LLM Call: {model}"
         )
 
         content = response.choices[0].message.content or ""
         usage = response.usage
 
-        # Cost estimation (placeholder pricing)
+        # Cost estimation
         cost = 0.0
         if usage:
             cost = (usage.prompt_tokens * 0.150 / 1_000_000) + (
@@ -101,12 +109,10 @@ class LLMClient:
     def complete(self, system_prompt: str, user_prompt: str) -> LLMResponse:
         """Return a model completion with usage tracking and fallback."""
         try:
-            # Try with primary model
             return self._call_api(self.model, system_prompt, user_prompt)
         except Exception as e:
             logger.error(f"Primary model {self.model} failed: {e}. Trying fallback {self.fallback_model}...")
             try:
-                # Fallback model
                 return self._call_api(self.fallback_model, system_prompt, user_prompt)
             except Exception as fe:
                 logger.critical(f"Both primary and fallback models failed. Last error: {fe}")

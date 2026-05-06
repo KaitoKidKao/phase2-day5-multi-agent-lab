@@ -77,10 +77,6 @@ def multi_agent(
     llm = LLMClient()
     search = SearchClient()
 
-    if not llm.validate_query(query):
-        console.print("[bold red]Error:[/bold red] Query violated safety or length limits.")
-        raise typer.Exit(code=1)
-    
     workflow = MultiAgentWorkflow(llm, search)
     
     # Setup callbacks
@@ -102,6 +98,22 @@ def multi_agent(
         # Pass callbacks to run
         result = workflow.run(state, callbacks=callbacks)
         
+        if result.errors:
+            for err in result.errors:
+                console.print(f"[bold red]Error:[/bold red] {err}")
+            
+            # Explicitly mark trace as error in Langfuse if possible
+            if langfuse_handler:
+                try:
+                    trace_id = langfuse_handler.get_trace_id()
+                    if trace_id:
+                        langfuse_handler.langfuse.trace(id=trace_id, status_message="Blocked by Guardrail", release="v1.0")
+                except Exception:
+                    pass
+
+            if "blocked" in result.route_history:
+                raise typer.Exit(code=1)
+        
         console.print("\n[bold green]Final Answer:[/bold green]")
         console.print(Panel(result.final_answer or "No answer generated.", title="Multi-Agent Result"))
         
@@ -109,17 +121,20 @@ def multi_agent(
             console.print("\n[bold cyan]Sources:[/bold cyan]")
             for src in result.sources:
                 console.print(f"- {src.title} ({src.url})")
-        
-        # Flush langfuse traces if handler exists
-        if langfuse_handler:
-            langfuse_handler.flush()
                 
     except StudentTodoError as exc:
         console.print(Panel.fit(str(exc), title="Expected TODO", style="yellow"))
         raise typer.Exit(code=2) from exc
+    except typer.Exit:
+        raise
     except Exception as exc:
         console.print(f"[bold red]Error during execution:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
+    finally:
+        # ALWAYS flush traces before exiting
+        if langfuse_handler:
+            with console.status("[dim]Flushing traces to Langfuse...[/dim]"):
+                langfuse_handler.flush()
 
 
 if __name__ == "__main__":
